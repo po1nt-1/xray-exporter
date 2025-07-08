@@ -1,11 +1,5 @@
 # Xray Exporter
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/compassvpn/xray-exporter)][goreportcard]
-[![Build Status](https://github.com/compassvpn/xray-exporter/actions/workflows/build-release-deploy.yml/badge.svg?branch=main)][build-status]
-
-[goreportcard]: https://goreportcard.com/report/github.com/compassvpn/xray-exporter
-[build-status]: https://github.com/compassvpn/xray-exporter/actions/workflows/build-release-deploy.yml
-
 An exporter that collects Xray (and V2Ray) metrics over its [Stats API][stats-api] and exports them to Prometheus.
 
 - [Xray Exporter](#xray-exporter)
@@ -112,9 +106,9 @@ Firstly, you will need to make sure the API and statistics-related features have
 }
 ```
 
-As you can see, we opened two inbounds in the configuration above. The first inbound listens port 54321 on localhost and handles the API calls, which is the endpoint that the exporter scrapes. The second inbound accepts VMess connections from user `email`. If you'd like to run Xray/V2Ray and exporter on different machines, consider use `0.0.0.0` instead of `127.0.0.1` but be careful with the security risks.
+As you can see, we opened two inbounds in the configuration above. The first inbound listens on port 54321 on localhost and handles the API calls, which is the endpoint that the exporter scrapes. The second inbound accepts VMess connections from the user `email`. If you'd like to run Xray/V2Ray and an exporter on different machines, consider using `0.0.0.0` instead of `127.0.0.1`, but be careful with the security risks.
 
-Additionally, you should also enable `stats`, `api`, and `policy` settings, and setup proper routing rules in order to get traffic statistics works. For more information, please visit [xray-core API docs](https://xtls.github.io/config/api.html) and [xray-core Stats docs](https://xtls.github.io/en/config/stats.html).
+Additionally, you should also enable `stats`, `api`, and `policy` settings, and set up proper routing rules to get traffic statistics working. For more information, please visit [xray-core API docs](https://xtls.github.io/config/api.html) and [xray-core Stats docs](https://xtls.github.io/en/config/stats.html).
 
 The next step is to start the exporter:
 
@@ -124,16 +118,16 @@ xray-exporter --xray-endpoint "127.0.0.1:54321"
 docker run --rm -d --read-only ghcr.io/compassvpn/xray-exporter:main --xray-endpoint "127.0.0.1:54321"
 ```
 
-The logs signifies that the exporter started to listening on the default address (`:9550`).
+The logs signify that the exporter started to listen on the default address (`:9550`).
 
 ```plain
 Xray Exporter main-a1b2c3d (built 2025-01-15T10:30:45Z)
 time="2025-01-15T10:30:45Z" level=info msg="Server is ready to handle incoming scrape requests."
 ```
 
-Use `--listen` option if you'd like to changing the listen address or port. You can now open `http://IP:9550` in your browser:
+Use `--listen` option if you'd like to change the listen address or port. You can now open `http://IP:9550` in your browser:
 
-Click the `Scrape Xray Metrics` and the exporter will expose all metrics including Xray/V2Ray runtime and statistics data in the Prometheus metrics format, for example:
+Click the `Scrape Xray Metrics` and the exporter will expose all metrics, including Xray/V2Ray runtime and statistics data in the Prometheus metrics format, for example:
 
 ```shell
 ...
@@ -146,9 +140,9 @@ xray_uptime_seconds 150624
 ...
 ```
 
-If `xray_up 1` doesn't exist in the response, that means the scrape was failed, please check out the logs (STDOUT or STDERR) of Xray Exporter for more detailed information.
+If `xray_up 1` doesn't exist in the response, that means the scrape failed. Please check out the logs (STDOUT or STDERR) of Xray Exporter for more detailed information.
 
-We have the metrics exposed. Now let Prometheus scrapes these data points and visualize them with Grafana. Here is an example Promtheus configuration:
+We have the metrics exposed. Now let Prometheus scrape these data points and visualize them with Grafana. Here is an example Prometheus configuration:
 
 ```yaml
 global:
@@ -166,7 +160,7 @@ To learn more about Prometheus, please visit the [official docs](https://prometh
 
 ## Digging Deeper
 
-For users who do not really care about the internal changes, but only need a mapping table, here it is:
+For users who do not care about the internal changes, but only need a mapping table, here it is:
 
 | Runtime Metric   | Exposed Metric                     |
 | :--------------- | :--------------------------------- |
