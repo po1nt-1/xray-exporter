@@ -27,11 +27,11 @@ The latest binaries are made available on the GitHub releases page:
 
 ### Docker
 
-You can also find the Docker images built automatically by CI from [Docker Hub](https://hub.docker.com/r/compassvpn/xray-exporter). The images are made for multi-arch. You can run it from your Raspberry Pi or any other ARM, ARM64 devices without changing the image name:
+You can also find the Docker images built automatically by CI from [GitHub Container Registry](https://github.com/compassvpn/xray-exporter/pkgs/container/xray-exporter). The images are made for multi-arch. You can run it from your Raspberry Pi or any other ARM, ARM64 devices without changing the image name:
 
 ```bash
 # Use a specific tag instead of the latest for production
-docker run --rm -it --read-only compassvpn/xray-exporter:<TAG>
+docker run --rm -it --read-only ghcr.io/compassvpn/xray-exporter:<TAG>
 ```
 
 Please note that the `latest` tag is not available. Use `main` instead if you want the latest build of the main branch.
@@ -123,7 +123,7 @@ The next step is to start the exporter:
 ```bash
 xray-exporter --xray-endpoint "127.0.0.1:54321"
 ## Or with Docker
-docker run --rm -d --read-only ghcr.io/{username}/xray-exporter:main --xray-endpoint "127.0.0.1:54321"
+docker run --rm -d --read-only ghcr.io/compassvpn/xray-exporter:main --xray-endpoint "127.0.0.1:54321"
 ```
 
 The logs signifies that the exporter started to listening on the default address (`:9550`).
