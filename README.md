@@ -1,6 +1,7 @@
 # Xray Exporter
 
-An exporter that collects Xray (and V2Ray) metrics over its Stats API and exports them to Prometheus.
+An exporter that collects Xray (and V2Ray) metrics over its [Stats API][stats-api] and exports them to Prometheus.
+
 
 - [Quick Start](#quick-start)
   - [Binaries](#binaries)
@@ -15,11 +16,11 @@ An exporter that collects Xray (and V2Ray) metrics over its Stats API and export
 
 ### Binaries
 
-The latest binaries are available on the [GitHub Releases Page](https://github.com/compassvpn/xray-exporter/releases/latest).
+The latest binaries are made available on the [GitHub Releases Page](https://github.com/compassvpn/xray-exporter/releases/latest).
 
 ### Docker
 
-You can also find the Docker images built automatically by CI from [GitHub Container Registry](https://github.com/compassvpn/xray-exporter/pkgs/container/xray-exporter).
+You can also find the Docker images built automatically by CI from [GitHub Container Registry](https://github.com/compassvpn/xray-exporter/pkgs/container/xray-exporter). The images are made for multi-arch.
 
 ```bash
 docker run --rm -it --read-only ghcr.io/compassvpn/xray-exporter:latest
@@ -32,7 +33,7 @@ Available tags:
 
 ### Grafana Dashboard
 
-A simple Grafana dashboard is also available [here](soon). Please refer to the Grafana docs to get the steps for importing dashboards from JSON files.
+Our CompassVPN Grafana dashboard is available [here](https://grafana.com/grafana/dashboards/23181-compassvpn-dashboard/). Please refer to the Grafana docs to get the steps for importing dashboards from JSON files.
 
 ## Command Line Options
 
