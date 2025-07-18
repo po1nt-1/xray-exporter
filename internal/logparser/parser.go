@@ -499,15 +499,22 @@ func isIPAddressFast(s string) bool {
 
 // Extracts domain with fewer string operations than the standard method.
 func extractDomainOptimized(line string) string {
-	// Look for tcp: or udp: patterns
-	tcpIdx := strings.Index(line, "tcp:")
-	udpIdx := strings.Index(line, "udp:")
+	// Look for "accepted" keyword first to avoid extracting from client part
+	acceptedIdx := strings.Index(line, "accepted ")
+	if acceptedIdx == -1 {
+		return ""
+	}
+
+	// Search for tcp: or udp: patterns AFTER "accepted"
+	searchArea := line[acceptedIdx:]
+	tcpIdx := strings.Index(searchArea, "tcp:")
+	udpIdx := strings.Index(searchArea, "udp:")
 
 	var startIdx int
 	if tcpIdx != -1 && (udpIdx == -1 || tcpIdx < udpIdx) {
-		startIdx = tcpIdx + 4
+		startIdx = acceptedIdx + tcpIdx + 4
 	} else if udpIdx != -1 {
-		startIdx = udpIdx + 4
+		startIdx = acceptedIdx + udpIdx + 4
 	} else {
 		return ""
 	}
