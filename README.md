@@ -34,7 +34,7 @@ Available tags:
 
 ### Grafana Dashboard
 
-Our CompassVPN Grafana dashboard is available [here](https://grafana.com/grafana/dashboards/23181-compassvpn-dashboard/). Please refer to the Grafana docs to get the steps for importing dashboards from JSON files.
+Our CompassVPN Grafana dashboard is available [here](https://grafana.com/grafana/dashboards/23181-compassvpn-dashboard/). Please take a look at the Grafana docs to get the steps for importing dashboards from JSON files.
 
 ## Command Line Options
 
@@ -68,8 +68,8 @@ Help Options:
 
 The exporter can parse Xray access logs to provide additional user activity insights:
 
-- **`--log-path`**: Path to Xray access log file. Set to empty string to disable user metrics.
-- **`--log-time-window`**: Time window in minutes for user activity metrics (default: 5 minutes).
+- **`--log-path`**: Path to Xray access log file. Set to an empty string to disable user metrics.
+- **`--log-time-window`**: Time window in minutes for user activity metrics (default: 3 minutes).
 
 These metrics help you understand user behavior, popular domains, and traffic patterns in real-time.
 
@@ -195,7 +195,7 @@ time="2025-01-15T10:30:45Z" level=info msg="Log parser started successfully"
 time="2025-01-15T10:30:45Z" level=info msg="Server starting on :9550"
 ```
 
-Use `--listen` option if you'd like to change the listen address or port. You can open `http://ip:9550` in your browser:
+Use the `--listen` option if you'd like to change the listen address or port. You can open `http://ip:9550` in your browser:
 
 Click the `Scrape Xray Metrics` and the exporter will expose all metrics, including Xray/V2Ray runtime and statistics data in the Prometheus metrics format, for example:
 
