@@ -23,7 +23,7 @@ var opts struct {
 	XRayEndpoint           string `short:"e" long:"xray-endpoint" description:"Xray API endpoint" value-name:"HOST:PORT" default:"127.0.0.1:8080"`
 	ScrapeTimeoutInSeconds int64  `short:"t" long:"scrape-timeout" description:"The timeout in seconds for every individual scrape" value-name:"N" default:"3"`
 	LogPath                string `short:"p" long:"log-path" description:"Path to Xray access log file (empty to disable user metrics)" value-name:"PATH" default:"/var/log/xray/access.log"`
-	LogTimeWindowMinutes   int    `short:"w" long:"log-time-window" description:"Time window in minutes for user metrics" value-name:"N" default:"5"`
+	LogTimeWindowMinutes   int    `short:"w" long:"log-time-window" description:"Time window in minutes for user metrics" value-name:"N"`
 	Version                bool   `long:"version" description:"Display the version and exit"`
 }
 
@@ -66,7 +66,13 @@ func main() {
 
 	// Initialize exporter with configuration
 	scrapeTimeout := time.Duration(opts.ScrapeTimeoutInSeconds) * time.Second
-	logTimeWindow := time.Duration(opts.LogTimeWindowMinutes) * time.Minute
+
+	// Use default time window if not specified
+	timeWindowMinutes := opts.LogTimeWindowMinutes
+	if timeWindowMinutes == 0 {
+		timeWindowMinutes = DefaultLogTimeWindowMinutes
+	}
+	logTimeWindow := time.Duration(timeWindowMinutes) * time.Minute
 	exporter, err := NewExporterWithLogConfig(opts.XRayEndpoint, scrapeTimeout, opts.LogPath, logTimeWindow)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to create exporter")

@@ -20,6 +20,9 @@ import (
 	"xray-exporter/internal/logparser"
 )
 
+// Default time window for user activity metrics (in minutes)
+const DefaultLogTimeWindowMinutes = 3
+
 // Collects Xray metrics and exposes them in Prometheus format.
 // Connects to Xray's gRPC API for runtime stats and optionally parses
 // access logs for user activity metrics.
@@ -40,7 +43,7 @@ type Exporter struct {
 
 // Creates a new Xray exporter with default settings.
 func NewExporter(endpoint string, scrapeTimeout time.Duration) (*Exporter, error) {
-	return NewExporterWithLogConfig(endpoint, scrapeTimeout, "", 5*time.Minute)
+	return NewExporterWithLogConfig(endpoint, scrapeTimeout, "", DefaultLogTimeWindowMinutes*time.Minute)
 }
 
 // Creates a new Xray exporter with custom log parsing configuration.
