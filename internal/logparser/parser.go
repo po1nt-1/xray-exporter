@@ -424,8 +424,11 @@ func (p *Parser) parseLogFile() error {
 		originalDomain := extractDomainOptimized(line)
 		if originalDomain != "" {
 			if isIPAddressFast(originalDomain) {
-				// Track IP requests separately
-				p.metrics.IPCounts[originalDomain]++
+				// Normalize and exclude system/DNS/private IPs
+				normalized := normalizeIP(originalDomain)
+				if normalized != "" && !p.ipFilter.ShouldFilter(normalized) {
+					p.metrics.IPCounts[normalized]++
+				}
 			} else {
 				// Track domain requests (root domain)
 				rootDomain := getRootDomain(originalDomain)
