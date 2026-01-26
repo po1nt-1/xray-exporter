@@ -10,14 +10,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/oschwald/geoip2-golang"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/sirupsen/logrus"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/xtls/xray-core/app/stats/command"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/sirupsen/logrus"
-	"google.golang.org/grpc"
-
+	"xray-exporter/internal/geoip"
 	"xray-exporter/internal/logparser"
 )
 
@@ -40,6 +41,11 @@ type Exporter struct {
 	logParser     *logparser.Parser
 	logPath       string
 	logTimeWindow time.Duration
+
+	// GeoIP for ASN lookups
+	geoipASNReader     *geoip2.Reader
+	geoipCityReader    *geoip2.Reader
+	geoipCountryReader *geoip2.Reader
 }
 
 // Creates a new Xray exporter with default settings.
@@ -81,6 +87,18 @@ func NewExporterWithLogConfig(endpoint string, scrapeTimeout time.Duration, logP
 		// User activity metrics from log parsing
 		"unique_users":      {txt: "Number of unique users in time window"},
 		"total_connections": {txt: "Total number of connections in time window"},
+		"asns_total": {
+			txt:  "Total number of requests per ASN",
+			lbls: []string{"asn", "org"},
+		},
+		"countries_total": {
+			txt:  "Total number of requests per country",
+			lbls: []string{"country"},
+		},
+		"cities_total": {
+			txt:  "Total number of requests per city",
+			lbls: []string{"city", "country"},
+		},
 	} {
 		e.metricDescriptions[k] = e.newMetricDescr(k, desc.txt, desc.lbls)
 	}
@@ -98,14 +116,39 @@ func NewExporterWithLogConfig(endpoint string, scrapeTimeout time.Duration, logP
 
 	e.conn = conn
 
+	// Initialize GeoIP readers
+	asnDB, err := geoip2.Open(geoip.ASNPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open GeoIP ASN database: %w", err)
+	}
+	e.geoipASNReader = asnDB
+
+	cityDB, err := geoip2.Open(geoip.CityPath)
+	if err != nil {
+		// If city database is missing, we still continue but city/country metrics will be unknown
+		logrus.WithError(err).Warn("Failed to open GeoIP City database, city/country metrics will be unavailable")
+	} else {
+		e.geoipCityReader = cityDB
+	}
+
+	countryDB, err := geoip2.Open(geoip.CountryPath)
+	if err != nil {
+		logrus.WithError(err).Warn("Failed to open GeoIP Country database, country metrics will be limited")
+	} else {
+		e.geoipCountryReader = countryDB
+	}
+
 	// Initialize log parser if path provided
 	if logPath != "" && logPath != "disabled" {
 		if _, err := os.Stat(logPath); err != nil {
 			logrus.WithError(err).Warn("Log file not found, user metrics will not be available")
 		} else {
 			parser, err := logparser.NewParser(logparser.Config{
-				LogPath:    logPath,
-				TimeWindow: logTimeWindow,
+				LogPath:       logPath,
+				TimeWindow:    logTimeWindow,
+				ASNReader:     e.geoipASNReader,
+				CountryReader: e.geoipCountryReader,
+				CityReader:    e.geoipCityReader,
 			})
 			if err != nil {
 				logrus.WithError(err).Warn("Failed to create log parser")
@@ -139,6 +182,9 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	e.collectLogMetrics(ch)
 	e.collectDomainMetrics(ch)
 	e.collectOutboundMetrics(ch)
+	e.collectASNMetrics(ch)
+	e.collectCountryMetrics(ch)
+	e.collectCityMetrics(ch)
 
 	// Core metrics
 	e.registerConstMetricGauge(ch, "up", up)
@@ -327,12 +373,12 @@ func (e *Exporter) collectDomainMetrics(ch chan<- prometheus.Metric) {
 		}{domain, count})
 	}
 
-	// Sort by count (descending) and take only top 20
+	// Sort by count (descending) and take only top N
 	sort.Slice(domainEntries, func(i, j int) bool {
 		return domainEntries[i].count > domainEntries[j].count
 	})
 
-	maxDomains := 20
+	maxDomains := logparser.MaxTrackedDomains
 	if len(domainEntries) < maxDomains {
 		maxDomains = len(domainEntries)
 	}
@@ -346,7 +392,7 @@ func (e *Exporter) collectDomainMetrics(ch chan<- prometheus.Metric) {
 		)
 	}
 
-	// Only export top 20 IPs to prevent cardinality leak
+	// Only export top IPs to prevent cardinality leak
 	ipEntries := make([]struct {
 		key   string
 		count int64
@@ -358,12 +404,12 @@ func (e *Exporter) collectDomainMetrics(ch chan<- prometheus.Metric) {
 		}{ip, count})
 	}
 
-	// Sort by count (descending) and take only top 20
+	// Sort by count (descending) and take only top N
 	sort.Slice(ipEntries, func(i, j int) bool {
 		return ipEntries[i].count > ipEntries[j].count
 	})
 
-	maxIPs := 20
+	maxIPs := logparser.MaxTrackedIPs
 	if len(ipEntries) < maxIPs {
 		maxIPs = len(ipEntries)
 	}
@@ -405,12 +451,12 @@ func (e *Exporter) collectOutboundMetrics(ch chan<- prometheus.Metric) {
 		}{outbound, count})
 	}
 
-	// Sort by count (descending) and take only top 10
+	// Sort by count (descending) and take only top N
 	sort.Slice(outboundEntries, func(i, j int) bool {
 		return outboundEntries[i].count > outboundEntries[j].count
 	})
 
-	maxOutbounds := 10
+	maxOutbounds := logparser.MaxTrackedOutbounds
 	if len(outboundEntries) < maxOutbounds {
 		maxOutbounds = len(outboundEntries)
 	}
@@ -425,10 +471,129 @@ func (e *Exporter) collectOutboundMetrics(ch chan<- prometheus.Metric) {
 	}
 }
 
+// Collects ASN statistics from log parser.
+func (e *Exporter) collectASNMetrics(ch chan<- prometheus.Metric) {
+	if e.logParser == nil {
+		return
+	}
+
+	asnCounts := e.logParser.GetASNCounts()
+	asnEntries := make([]struct {
+		key   string
+		count int64
+	}, 0, len(asnCounts))
+	for asn, count := range asnCounts {
+		asnEntries = append(asnEntries, struct {
+			key   string
+			count int64
+		}{asn, count})
+	}
+
+	sort.Slice(asnEntries, func(i, j int) bool {
+		return asnEntries[i].count > asnEntries[j].count
+	})
+
+	maxASNs := logparser.MaxTrackedASNs
+	if len(asnEntries) < maxASNs {
+		maxASNs = len(asnEntries)
+	}
+
+	for i := 0; i < maxASNs; i++ {
+		parts := strings.Split(asnEntries[i].key, "|")
+		asn := parts[0]
+		org := ""
+
+		if len(parts) > 1 {
+			org = parts[1]
+		}
+
+		e.registerConstMetricCounter(ch, "asns_total", float64(asnEntries[i].count), asn, org)
+	}
+}
+
+// Collects country statistics from log parser.
+func (e *Exporter) collectCountryMetrics(ch chan<- prometheus.Metric) {
+	if e.logParser == nil {
+		return
+	}
+
+	countryCounts := e.logParser.GetCountryCounts()
+	countryEntries := make([]struct {
+		key   string
+		count int64
+	}, 0, len(countryCounts))
+	for country, count := range countryCounts {
+		countryEntries = append(countryEntries, struct {
+			key   string
+			count int64
+		}{country, count})
+	}
+
+	sort.Slice(countryEntries, func(i, j int) bool {
+		return countryEntries[i].count > countryEntries[j].count
+	})
+
+	maxCountries := logparser.MaxTrackedCountries
+	if len(countryEntries) < maxCountries {
+		maxCountries = len(countryEntries)
+	}
+
+	for i := 0; i < maxCountries; i++ {
+		e.registerConstMetricCounter(ch, "countries_total", float64(countryEntries[i].count), countryEntries[i].key)
+	}
+}
+
+// Collects city statistics from log parser.
+func (e *Exporter) collectCityMetrics(ch chan<- prometheus.Metric) {
+	if e.logParser == nil {
+		return
+	}
+
+	cityCounts := e.logParser.GetCityCounts()
+	cityEntries := make([]struct {
+		key   string
+		count int64
+	}, 0, len(cityCounts))
+	for city, count := range cityCounts {
+		cityEntries = append(cityEntries, struct {
+			key   string
+			count int64
+		}{city, count})
+	}
+
+	sort.Slice(cityEntries, func(i, j int) bool {
+		return cityEntries[i].count > cityEntries[j].count
+	})
+
+	maxCities := logparser.MaxTrackedCities
+	if len(cityEntries) < maxCities {
+		maxCities = len(cityEntries)
+	}
+
+	for i := 0; i < maxCities; i++ {
+		parts := strings.Split(cityEntries[i].key, "|")
+		city := parts[0]
+		country := ""
+		if len(parts) > 1 {
+			country = parts[1]
+		}
+		e.registerConstMetricCounter(ch, "cities_total", float64(cityEntries[i].count), city, country)
+	}
+}
+
 // Properly closes gRPC connection and stops log parser.
 func (e *Exporter) Close() error {
 	if e.logParser != nil {
 		e.logParser.Stop()
+	}
+	if e.geoipASNReader != nil {
+		e.geoipASNReader.Close()
+	}
+	if e.geoipCityReader != nil {
+		e.geoipCityReader.Close()
+	}
+	if e.geoipCountryReader != nil {
+		e.geoipCountryReader.Close()
 	}
 	if e.conn != nil {
 		return e.conn.Close()
