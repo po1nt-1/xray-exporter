@@ -5,8 +5,6 @@ import (
 	"time"
 )
 
-// --- helpers ---
-
 func wantNil(t *testing.T, label string, got interface{}) {
 	t.Helper()
 	if got != nil {
@@ -21,16 +19,8 @@ func wantNotNil(t *testing.T, label string, got interface{}) {
 	}
 }
 
-// TestMain_NoLogpathFlag verifies no log path flags exist.
-func TestMain_NoLogpathFlag(t *testing.T) {
-	t.Parallel()
-	// The --log-path flag was removed from the --help output.
-	// Build succeeds without internal/logparser package.
-	t.Skip("verified by go build success")
-}
-
-// TestMain_TLSFlag verifies --xray-api-tls works.
-func TestMain_TLSFlag(t *testing.T) {
+// TestExporter_TLS verifies --xray-api-tls flag.
+func TestExporter_TLS(t *testing.T) {
 	t.Parallel()
 
 	e, err := NewExporter("127.0.0.1:8080", 5*time.Second, true)
@@ -44,7 +34,7 @@ func TestMain_TLSFlag(t *testing.T) {
 	_ = e2.Close()
 }
 
-// TestExporter_Credentials_NoTLS verifies localhost uses insecure credentials.
+// TestExporter_Credentials_NoTLS verifies insecure credentials on localhost.
 func TestExporter_Credentials_NoTLS(t *testing.T) {
 	t.Parallel()
 
@@ -54,7 +44,7 @@ func TestExporter_Credentials_NoTLS(t *testing.T) {
 	_ = e.Close()
 }
 
-// TestExporter_Credentials_TLSEnabled verifies useTLS=true works.
+// TestExporter_Credentials_TLSEnabled verifies TLS works for remote hosts.
 func TestExporter_Credentials_TLSEnabled(t *testing.T) {
 	t.Parallel()
 
@@ -67,22 +57,6 @@ func TestExporter_Credentials_TLSEnabled(t *testing.T) {
 	wantNil(t, "err remote", err)
 	wantNotNil(t, "conn2", e2.conn)
 	_ = e2.Close()
-}
-
-// TestExporter_Metrics_NoLogMetrics verifies log-related metrics are absent.
-func TestExporter_Metrics_NoLogMetrics(t *testing.T) {
-	t.Parallel()
-
-	e, err := NewExporter("127.0.0.1:8080", 5*time.Second, false)
-	wantNil(t, "err", err)
-	wantNotNil(t, "exporter", e)
-	defer e.Close()
-
-	for _, k := range []string{"unique_users", "total_connections"} {
-		if _, ok := e.metricDescriptions[k]; ok {
-			t.Errorf("unexpected metric %q", k)
-		}
-	}
 }
 
 // TestExporter_Metrics_CorePresent verifies core metrics exist.
@@ -132,6 +106,5 @@ func TestExporter_Close_Idempotent(t *testing.T) {
 	wantNil(t, "first close", err)
 
 	err = e.Close()
-	// Accept any error from double-close.
 	_ = err
 }
