@@ -1,33 +1,21 @@
-// Core exporter functionality for collecting Xray metrics.
 package main
 
 import (
 	"context"
 	"fmt"
-	"os"
-	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/oschwald/geoip2-golang"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/xtls/xray-core/app/stats/command"
-
-	"xray-exporter/internal/geoip"
-	"xray-exporter/internal/logparser"
 )
 
-// Default time window for user activity metrics (in minutes)
-const DefaultLogTimeWindowMinutes = 5
-
-// Collects Xray metrics and exposes them in Prometheus format.
-// Connects to Xray's gRPC API for runtime stats and optionally parses
-// access logs for user activity metrics.
 type Exporter struct {
 	sync.Mutex
 	endpoint           string
@@ -36,32 +24,13 @@ type Exporter struct {
 	totalScrapes       prometheus.Counter
 	metricDescriptions map[string]*prometheus.Desc
 	conn               *grpc.ClientConn
-
-	// Log parsing for user metrics
-	logParser     *logparser.Parser
-	logPath       string
-	logTimeWindow time.Duration
-
-	// GeoIP for ASN lookups
-	geoipASNReader     *geoip2.Reader
-	geoipCityReader    *geoip2.Reader
-	geoipCountryReader *geoip2.Reader
 }
 
-// Creates a new Xray exporter with default settings.
-func NewExporter(endpoint string, scrapeTimeout time.Duration) (*Exporter, error) {
-	return NewExporterWithLogConfig(endpoint, scrapeTimeout, "", DefaultLogTimeWindowMinutes*time.Minute)
-}
-
-// Creates a new Xray exporter with custom log parsing configuration.
-// Pass empty logPath to disable user metrics from log parsing.
-func NewExporterWithLogConfig(endpoint string, scrapeTimeout time.Duration, logPath string, logTimeWindow time.Duration) (*Exporter, error) {
+func NewExporter(endpoint string, scrapeTimeout time.Duration, useTLS bool) (*Exporter, error) {
 	e := Exporter{
 		endpoint:      endpoint,
 		scrapeTimeout: scrapeTimeout,
 		registry:      prometheus.NewRegistry(),
-		logPath:       logPath,
-		logTimeWindow: logTimeWindow,
 
 		totalScrapes: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "xray",
@@ -70,146 +39,62 @@ func NewExporterWithLogConfig(endpoint string, scrapeTimeout time.Duration, logP
 		}),
 	}
 
-	// Initialize all metric descriptions
 	e.metricDescriptions = map[string]*prometheus.Desc{}
 
 	for k, desc := range map[string]struct {
 		txt  string
 		lbls []string
 	}{
-		// Core Xray metrics
-		"up":                           {txt: "Indicate scrape succeeded or not"},
-		"scrape_duration_seconds":      {txt: "Scrape duration in seconds"},
-		"uptime_seconds":               {txt: "Xray uptime in seconds"},
-		"traffic_uplink_bytes_total":   {txt: "Number of transmitted bytes", lbls: []string{"dimension", "target"}},
-		"traffic_downlink_bytes_total": {txt: "Number of received bytes", lbls: []string{"dimension", "target"}},
-
-		// User activity metrics from log parsing
-		"unique_users":      {txt: "Number of unique users in time window"},
-		"total_connections": {txt: "Total number of connections in time window"},
-		"asns_total": {
-			txt:  "Total number of requests per ASN",
-			lbls: []string{"asn", "org"},
-		},
-		"countries_total": {
-			txt:  "Total number of requests per country",
-			lbls: []string{"country"},
-		},
-		"cities_total": {
-			txt:  "Total number of requests per city",
-			lbls: []string{"city", "country"},
-		},
+		"up":             {txt: "Indicate scrape succeeded or not"},
+		"uptime_seconds":  {txt: "Xray uptime in seconds"},
+		"goroutines":     {txt: "Number of goroutines currently running"},
+		"traffic_uplink_bytes_total":    {txt: "Number of transmitted bytes", lbls: []string{"dimension", "target"}},
+		"traffic_downlink_bytes_total":  {txt: "Number of received bytes", lbls: []string{"dimension", "target"}},
 	} {
 		e.metricDescriptions[k] = e.newMetricDescr(k, desc.txt, desc.lbls)
 	}
 
 	e.registry.MustRegister(&e)
 
-	// Create simple gRPC connection
-	// No keepalive needed for short, infrequent calls every 15-30s
-	conn, err := grpc.NewClient(endpoint,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
+	var creds credentials.TransportCredentials
+	if useTLS {
+		creds = credentials.NewTLS(nil)
+	} else {
+		creds = insecure.NewCredentials()
+	}
+
+	conn, err := grpc.NewClient(endpoint, grpc.WithTransportCredentials(creds))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gRPC client: %w", err)
 	}
 
 	e.conn = conn
-
-	// Initialize GeoIP readers
-	asnDB, err := geoip2.Open(geoip.ASNPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open GeoIP ASN database: %w", err)
-	}
-	e.geoipASNReader = asnDB
-
-	cityDB, err := geoip2.Open(geoip.CityPath)
-	if err != nil {
-		// If city database is missing, we still continue but city/country metrics will be unknown
-		logrus.WithError(err).Warn("Failed to open GeoIP City database, city/country metrics will be unavailable")
-	} else {
-		e.geoipCityReader = cityDB
-	}
-
-	countryDB, err := geoip2.Open(geoip.CountryPath)
-	if err != nil {
-		logrus.WithError(err).Warn("Failed to open GeoIP Country database, country metrics will be limited")
-	} else {
-		e.geoipCountryReader = countryDB
-	}
-
-	// Initialize log parser if path provided
-	if logPath != "" && logPath != "disabled" {
-		if _, err := os.Stat(logPath); err != nil {
-			logrus.WithError(err).Warn("Log file not found, user metrics will not be available")
-		} else {
-			parser, err := logparser.NewParser(logparser.Config{
-				LogPath:       logPath,
-				TimeWindow:    logTimeWindow,
-				ASNReader:     e.geoipASNReader,
-				CountryReader: e.geoipCountryReader,
-				CityReader:    e.geoipCityReader,
-			})
-			if err != nil {
-				logrus.WithError(err).Warn("Failed to create log parser")
-			} else {
-				e.logParser = parser
-				if err := e.logParser.Start(); err != nil {
-					logrus.WithError(err).Warn("Failed to start log parser")
-				} else {
-					logrus.Info("Log parser started successfully")
-				}
-			}
-		}
-	}
-
 	return &e, nil
 }
 
-// Implements prometheus.Collector interface - gathers all metrics from Xray and log sources.
 func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	e.totalScrapes.Inc()
 	start := time.Now()
 
-	// Attempt to scrape Xray metrics via gRPC
 	var up float64 = 1
 	if err := e.scrapeXray(ch); err != nil {
 		up = 0
 		logrus.WithError(err).Warn("Scrape failed")
 	}
 
-	// Collect log-based metrics
-	e.collectLogMetrics(ch)
-	e.collectDomainMetrics(ch)
-	e.collectOutboundMetrics(ch)
-	e.collectASNMetrics(ch)
-	e.collectCountryMetrics(ch)
-	e.collectCityMetrics(ch)
-
-	// Core metrics
 	e.registerConstMetricGauge(ch, "up", up)
 	e.registerConstMetricGauge(ch, "scrape_duration_seconds", time.Since(start).Seconds())
 
 	ch <- e.totalScrapes
 }
 
-// Implements prometheus.Collector interface - describes all metrics this collector can produce.
 func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 	for _, desc := range e.metricDescriptions {
 		ch <- desc
 	}
-
 	ch <- e.totalScrapes.Desc()
-
-	ch <- prometheus.NewDesc(
-		prometheus.BuildFQName("xray", "", "requested_domain_ip_total"),
-		"Total number of requests per domain or IP",
-		[]string{"target"},
-		nil,
-	)
 }
 
-// Connects to Xray's gRPC API and collects all available metrics.
 func (e *Exporter) scrapeXray(ch chan<- prometheus.Metric) error {
 	ctx, cancel := context.WithTimeout(context.Background(), e.scrapeTimeout)
 	defer cancel()
@@ -227,7 +112,6 @@ func (e *Exporter) scrapeXray(ch chan<- prometheus.Metric) error {
 	return nil
 }
 
-// Collects traffic statistics from Xray's stats API.
 func (e *Exporter) scrapeXrayMetrics(ctx context.Context, ch chan<- prometheus.Metric, client command.StatsServiceClient) error {
 	resp, err := e.callWithRetry(func() (interface{}, error) {
 		return client.QueryStats(ctx, &command.QueryStatsRequest{Reset_: false})
@@ -238,11 +122,8 @@ func (e *Exporter) scrapeXrayMetrics(ctx context.Context, ch chan<- prometheus.M
 
 	statsResp := resp.(*command.QueryStatsResponse)
 	for _, s := range statsResp.GetStat() {
-		// Parse format: inbound>>>socks-proxy>>>traffic>>>uplink
 		p := strings.Split(s.GetName(), ">>>")
 
-		// Skip per-user traffic metrics to control cardinality
-		// This prevents creating thousands of series for individual users
 		if p[0] == "user" {
 			continue
 		}
@@ -257,7 +138,6 @@ func (e *Exporter) scrapeXrayMetrics(ctx context.Context, ch chan<- prometheus.M
 	return nil
 }
 
-// Collects system runtime metrics from Xray.
 func (e *Exporter) scrapeXraySysMetrics(ctx context.Context, ch chan<- prometheus.Metric, client command.StatsServiceClient) error {
 	resp, err := e.callWithRetry(func() (interface{}, error) {
 		return client.GetSysStats(ctx, &command.SysStatsRequest{})
@@ -268,24 +148,18 @@ func (e *Exporter) scrapeXraySysMetrics(ctx context.Context, ch chan<- prometheu
 
 	sysResp := resp.(*command.SysStatsResponse)
 	e.registerConstMetricGauge(ch, "uptime_seconds", float64(sysResp.GetUptime()))
-
-	// Memory and runtime metrics following Go collector naming conventions
 	e.registerConstMetricGauge(ch, "goroutines", float64(sysResp.GetNumGoroutine()))
 	e.registerConstMetricGauge(ch, "memstats_alloc_bytes", float64(sysResp.GetAlloc()))
 	e.registerConstMetricGauge(ch, "memstats_alloc_bytes_total", float64(sysResp.GetTotalAlloc()))
 	e.registerConstMetricGauge(ch, "memstats_sys_bytes", float64(sysResp.GetSys()))
 	e.registerConstMetricGauge(ch, "memstats_mallocs_total", float64(sysResp.GetMallocs()))
 	e.registerConstMetricGauge(ch, "memstats_frees_total", float64(sysResp.GetFrees()))
-
-	// Additional memory metrics not in standard Go collector
 	e.registerConstMetricGauge(ch, "memstats_num_gc", float64(sysResp.GetNumGC()))
 	e.registerConstMetricGauge(ch, "memstats_pause_total_ns", float64(sysResp.GetPauseTotalNs()))
 
 	return nil
 }
 
-// Implements exponential backoff retry for gRPC calls.
-// Helps handle temporary network issues or Xray restarts.
 func (e *Exporter) callWithRetry(fn func() (interface{}, error)) (interface{}, error) {
 	maxRetries := 3
 	baseDelay := 100 * time.Millisecond
@@ -333,268 +207,7 @@ func (e *Exporter) newMetricDescr(metricName string, docString string, labels []
 	return prometheus.NewDesc(prometheus.BuildFQName("xray", "", metricName), docString, labels, nil)
 }
 
-// Collects user activity metrics from log parser.
-func (e *Exporter) collectLogMetrics(ch chan<- prometheus.Metric) {
-	if e.logParser == nil {
-		return
-	}
-
-	uniqueUsers, totalConns := e.logParser.GetMetrics()
-
-	e.registerConstMetricGauge(ch, "unique_users", float64(uniqueUsers))
-	e.registerConstMetricGauge(ch, "total_connections", float64(totalConns))
-}
-
-// Collects domain and IP request statistics from log parser.
-func (e *Exporter) collectDomainMetrics(ch chan<- prometheus.Metric) {
-	if e.logParser == nil {
-		return
-	}
-
-	domainCounts := e.logParser.GetDomainCounts()
-	ipCounts := e.logParser.GetIPCounts()
-
-	metricDesc := prometheus.NewDesc(
-		prometheus.BuildFQName("xray", "", "requested_domain_ip_total"),
-		"Total number of requests per domain or IP",
-		[]string{"target"},
-		nil,
-	)
-
-	// Only export top 20 domains to prevent cardinality leak
-	domainEntries := make([]struct {
-		key   string
-		count int64
-	}, 0, len(domainCounts))
-	for domain, count := range domainCounts {
-		domainEntries = append(domainEntries, struct {
-			key   string
-			count int64
-		}{domain, count})
-	}
-
-	// Sort by count (descending) and take only top N
-	sort.Slice(domainEntries, func(i, j int) bool {
-		return domainEntries[i].count > domainEntries[j].count
-	})
-
-	maxDomains := logparser.MaxTrackedDomains
-	if len(domainEntries) < maxDomains {
-		maxDomains = len(domainEntries)
-	}
-
-	for i := 0; i < maxDomains; i++ {
-		ch <- prometheus.MustNewConstMetric(
-			metricDesc,
-			prometheus.CounterValue,
-			float64(domainEntries[i].count),
-			domainEntries[i].key,
-		)
-	}
-
-	// Only export top IPs to prevent cardinality leak
-	ipEntries := make([]struct {
-		key   string
-		count int64
-	}, 0, len(ipCounts))
-	for ip, count := range ipCounts {
-		ipEntries = append(ipEntries, struct {
-			key   string
-			count int64
-		}{ip, count})
-	}
-
-	// Sort by count (descending) and take only top N
-	sort.Slice(ipEntries, func(i, j int) bool {
-		return ipEntries[i].count > ipEntries[j].count
-	})
-
-	maxIPs := logparser.MaxTrackedIPs
-	if len(ipEntries) < maxIPs {
-		maxIPs = len(ipEntries)
-	}
-
-	for i := 0; i < maxIPs; i++ {
-		ch <- prometheus.MustNewConstMetric(
-			metricDesc,
-			prometheus.CounterValue,
-			float64(ipEntries[i].count),
-			ipEntries[i].key,
-		)
-	}
-}
-
-// Collects outbound routing statistics from log parser.
-func (e *Exporter) collectOutboundMetrics(ch chan<- prometheus.Metric) {
-	if e.logParser == nil {
-		return
-	}
-
-	outboundCounts := e.logParser.GetOutboundCounts()
-
-	metricDesc := prometheus.NewDesc(
-		prometheus.BuildFQName("xray", "", "outbound_requests_total"),
-		"Total number of requests per outbound",
-		[]string{"outbound"},
-		nil,
-	)
-
-	// Only export top 10 outbounds to prevent cardinality leak
-	outboundEntries := make([]struct {
-		key   string
-		count int64
-	}, 0, len(outboundCounts))
-	for outbound, count := range outboundCounts {
-		outboundEntries = append(outboundEntries, struct {
-			key   string
-			count int64
-		}{outbound, count})
-	}
-
-	// Sort by count (descending) and take only top N
-	sort.Slice(outboundEntries, func(i, j int) bool {
-		return outboundEntries[i].count > outboundEntries[j].count
-	})
-
-	maxOutbounds := logparser.MaxTrackedOutbounds
-	if len(outboundEntries) < maxOutbounds {
-		maxOutbounds = len(outboundEntries)
-	}
-
-	for i := 0; i < maxOutbounds; i++ {
-		ch <- prometheus.MustNewConstMetric(
-			metricDesc,
-			prometheus.CounterValue,
-			float64(outboundEntries[i].count),
-			outboundEntries[i].key,
-		)
-	}
-}
-
-// Collects ASN statistics from log parser.
-func (e *Exporter) collectASNMetrics(ch chan<- prometheus.Metric) {
-	if e.logParser == nil {
-		return
-	}
-
-	asnCounts := e.logParser.GetASNCounts()
-	asnEntries := make([]struct {
-		key   string
-		count int64
-	}, 0, len(asnCounts))
-	for asn, count := range asnCounts {
-		asnEntries = append(asnEntries, struct {
-			key   string
-			count int64
-		}{asn, count})
-	}
-
-	sort.Slice(asnEntries, func(i, j int) bool {
-		return asnEntries[i].count > asnEntries[j].count
-	})
-
-	maxASNs := logparser.MaxTrackedASNs
-	if len(asnEntries) < maxASNs {
-		maxASNs = len(asnEntries)
-	}
-
-	for i := 0; i < maxASNs; i++ {
-		parts := strings.Split(asnEntries[i].key, "|")
-		asn := parts[0]
-		org := ""
-
-		if len(parts) > 1 {
-			org = parts[1]
-		}
-
-		e.registerConstMetricCounter(ch, "asns_total", float64(asnEntries[i].count), asn, org)
-	}
-}
-
-// Collects country statistics from log parser.
-func (e *Exporter) collectCountryMetrics(ch chan<- prometheus.Metric) {
-	if e.logParser == nil {
-		return
-	}
-
-	countryCounts := e.logParser.GetCountryCounts()
-	countryEntries := make([]struct {
-		key   string
-		count int64
-	}, 0, len(countryCounts))
-	for country, count := range countryCounts {
-		countryEntries = append(countryEntries, struct {
-			key   string
-			count int64
-		}{country, count})
-	}
-
-	sort.Slice(countryEntries, func(i, j int) bool {
-		return countryEntries[i].count > countryEntries[j].count
-	})
-
-	maxCountries := logparser.MaxTrackedCountries
-	if len(countryEntries) < maxCountries {
-		maxCountries = len(countryEntries)
-	}
-
-	for i := 0; i < maxCountries; i++ {
-		e.registerConstMetricCounter(ch, "countries_total", float64(countryEntries[i].count), countryEntries[i].key)
-	}
-}
-
-// Collects city statistics from log parser.
-func (e *Exporter) collectCityMetrics(ch chan<- prometheus.Metric) {
-	if e.logParser == nil {
-		return
-	}
-
-	cityCounts := e.logParser.GetCityCounts()
-	cityEntries := make([]struct {
-		key   string
-		count int64
-	}, 0, len(cityCounts))
-	for city, count := range cityCounts {
-		cityEntries = append(cityEntries, struct {
-			key   string
-			count int64
-		}{city, count})
-	}
-
-	sort.Slice(cityEntries, func(i, j int) bool {
-		return cityEntries[i].count > cityEntries[j].count
-	})
-
-	maxCities := logparser.MaxTrackedCities
-	if len(cityEntries) < maxCities {
-		maxCities = len(cityEntries)
-	}
-
-	for i := 0; i < maxCities; i++ {
-		parts := strings.Split(cityEntries[i].key, "|")
-		city := parts[0]
-		country := ""
-		if len(parts) > 1 {
-			country = parts[1]
-		}
-		e.registerConstMetricCounter(ch, "cities_total", float64(cityEntries[i].count), city, country)
-	}
-}
-
-// Properly closes gRPC connection and stops log parser.
 func (e *Exporter) Close() error {
-	if e.logParser != nil {
-		e.logParser.Stop()
-	}
-	if e.geoipASNReader != nil {
-		e.geoipASNReader.Close()
-	}
-	if e.geoipCityReader != nil {
-		e.geoipCityReader.Close()
-	}
-	if e.geoipCountryReader != nil {
-		e.geoipCountryReader.Close()
-	}
 	if e.conn != nil {
 		return e.conn.Close()
 	}

@@ -1,0 +1,28 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+xray-exporter-test
+
+# Test binary
+*.test
+
+# Vendor directory often used by Go builds for dependency resolution
+/vendor/
+
+# Build artifacts and dist output for local builds
+/dist/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Internal / development files
+tests/
