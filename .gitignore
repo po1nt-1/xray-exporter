@@ -5,6 +5,7 @@
 *.so
 *.dylib
 xray-exporter-test
+xray-exporter
 
 # Test binary
 *.test
