@@ -4,7 +4,6 @@
 *.dll
 *.so
 *.dylib
-xray-exporter-test
 xray-exporter
 
 # Test binary
@@ -18,12 +17,8 @@ xray-exporter
 
 # OS generated files
 .DS_Store
-.DS_Store?
 ._*
 .Spotlight-V100
 .Trashes
 ehthumbs.db
 Thumbs.db
-
-# Internal / development files
-tests/
