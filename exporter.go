@@ -45,11 +45,11 @@ func NewExporter(endpoint string, scrapeTimeout time.Duration, useTLS bool) (*Ex
 		txt  string
 		lbls []string
 	}{
-		"up":             {txt: "Indicate scrape succeeded or not"},
-		"uptime_seconds":  {txt: "Xray uptime in seconds"},
-		"goroutines":     {txt: "Number of goroutines currently running"},
-		"traffic_uplink_bytes_total":    {txt: "Number of transmitted bytes", lbls: []string{"dimension", "target"}},
-		"traffic_downlink_bytes_total":  {txt: "Number of received bytes", lbls: []string{"dimension", "target"}},
+		"up":                           {txt: "Indicate scrape succeeded or not"},
+		"uptime_seconds":               {txt: "Xray uptime in seconds"},
+		"goroutines":                   {txt: "Number of goroutines currently running"},
+		"traffic_uplink_bytes_total":   {txt: "Number of transmitted bytes", lbls: []string{"dimension", "target"}},
+		"traffic_downlink_bytes_total": {txt: "Number of received bytes", lbls: []string{"dimension", "target"}},
 	} {
 		e.metricDescriptions[k] = e.newMetricDescr(k, desc.txt, desc.lbls)
 	}
