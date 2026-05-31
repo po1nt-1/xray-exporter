@@ -5,7 +5,7 @@ go 1.26
 require (
 	github.com/jessevdk/go-flags v1.6.1
 	github.com/prometheus/client_golang v1.23.2
-	github.com/sirupsen/logrus v1.9.3
+	github.com/sirupsen/logrus v1.9.4
 	github.com/xtls/xray-core v1.260327.0
 	google.golang.org/grpc v1.81.1
 )
