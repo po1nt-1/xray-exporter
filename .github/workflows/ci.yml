@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@de0fac2e4500
+      - uses: actions/setup-go@4a3601121dd0
+        with:
+          go-version: '1.26'
+          cache: true
+      - name: Build binary
+        run: |
+          make build \
+            VERSION=${{ github.ref_name }} \
+            COMMIT=${{ github.sha }} \
+            GOOS=${{ matrix.goos }} \
+            GOARCH=${{ matrix.goarch }}
+      - name: Checksum
+        run: sha256sum dist/* > dist/checksum.txt
+      - name: Upload artifacts
+        uses: actions/upload-artifact@043fb46d1a93
+        with:
+          name: xray-exporter-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/
+          retention-days: 7
