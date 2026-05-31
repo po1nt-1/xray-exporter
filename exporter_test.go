@@ -68,8 +68,10 @@ func TestExporter_Metrics_CorePresent(t *testing.T) {
 	wantNotNil(t, "exporter", e)
 	defer e.Close()
 
-	for _, k := range []string{"up", "uptime_seconds", "goroutines",
-		"traffic_uplink_bytes_total", "traffic_downlink_bytes_total"} {
+	for _, k := range []string{
+		"up", "uptime_seconds", "goroutines",
+		"traffic_uplink_bytes_total", "traffic_downlink_bytes_total",
+	} {
 		if _, ok := e.metricDescriptions[k]; !ok {
 			t.Errorf("expected metric %q", k)
 		}

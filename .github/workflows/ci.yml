@@ -7,7 +7,23 @@ on:
     branches: [ main ]
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500
+      - uses: actions/setup-go@4a3601121dd0
+        with:
+          go-version: '1.26'
+          cache: true
+      - name: Lint
+        run: make lint
+      - name: Format
+        run: make fmt-check
+      - name: Test
+        run: make test
+
   build:
+    needs: check
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -30,7 +46,8 @@ jobs:
             GOOS=${{ matrix.goos }} \
             GOARCH=${{ matrix.goarch }}
       - name: Checksum
-        run: sha256sum dist/* > dist/checksum.txt
+        run: |
+          sha256sum dist/* > dist/checksum.txt
       - name: Upload artifacts
         uses: actions/upload-artifact@043fb46d1a93
         with:

@@ -7,7 +7,7 @@ COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 DIST    := dist
 
-.PHONY: all build test vet fmt lint clean image help
+.PHONY: all build test vet fmt fmt-check lint check image clean help
 
 all: build
 
@@ -31,6 +31,13 @@ vet:
 
 fmt:
 	@$(GO) fmt ./...
+
+fmt-check:
+	@diff_output=$$($(GO) fmt ./... 2>&1); \
+	if [ -n "$$diff_output" ]; then \
+		echo "Файлы не отформатированы:"; echo "$$diff_output"; \
+		exit 1; \
+	fi
 
 lint: vet
 
