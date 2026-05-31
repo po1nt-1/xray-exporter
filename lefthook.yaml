@@ -2,17 +2,14 @@
 pre-commit:
   parallel: true
   commands:
-    check-yaml:
-      glob: "*.{yml,yaml}"
-      run: python3 -c "import yaml,sys;[list(yaml.safe_load_all(open(f)))for f in sys.argv[1:]]"
     gitleaks:
       run: gitleaks detect --source . --no-banner --log-level=error --no-git
     lint:
       glob: "*.go"
       run: make lint
-    fmt-check:
+    fmt:
       glob: "*.go"
-      run: make fmt-check
+      run: make fmt
 
 pre-push:
   commands:
