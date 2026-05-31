@@ -2,15 +2,11 @@
 pre-commit:
   parallel: true
   commands:
-    end-of-file-fixer:
-      glob: "*.{yml,yaml}"
-      run: git diff --cached --name-only --diff-filter=ACMR | xargs -I{} perl -pi -e 'chomp if eof' {}
-    trailing-whitespace:
-      glob: "*.{yml,yaml,go}"
-      run: git diff --cached --name-only --diff-filter=ACMR | xargs -I{} perl -pi -e 's/\s+$//' {}
     check-yaml:
       glob: "*.{yml,yaml}"
-      run: python3 -c "import yaml, sys; [list(yaml.safe_load_all(open(f)))for f in sys.argv[1:]]"
+      run: python3 -c "import yaml,sys;[list(yaml.safe_load_all(open(f)))for f in sys.argv[1:]]"
+    gitleaks:
+      run: gitleaks detect --source . --no-banner --log-level=error --no-git
     lint:
       glob: "*.go"
       run: make lint
