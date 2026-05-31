@@ -10,8 +10,8 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-      - uses: actions/setup-go@v6@4a3601121dd01d1626a1e23e37211e3254c1c06c
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
         with:
           go-version: '1.26'
           cache: true
@@ -33,8 +33,8 @@ jobs:
           - goos: linux
             goarch: arm64
     steps:
-      - uses: actions/checkout@v6@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-      - uses: actions/setup-go@v6@4a3601121dd01d1626a1e23e37211e3254c1c06c
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
         with:
           go-version: '1.26'
           cache: true
@@ -48,7 +48,7 @@ jobs:
       - name: Checksum
         run: sha256sum dist/* > dist/checksum.txt
       - name: Upload artifacts
-        uses: actions/upload-artifact@v7@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: xray-exporter-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/
