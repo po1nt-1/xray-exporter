@@ -8,7 +8,7 @@ require (
 	github.com/prometheus/client_model v0.6.3
 	github.com/prometheus/common v0.72.0
 	github.com/xtls/xray-core v1.260327.1-0.20261031132019-a4a3dff5b20c
-	go.yaml.in/yaml/v2 v2.4.4
+	go.yaml.in/yaml/v2 v2.4.5
 	google.golang.org/grpc v1.85.0
 )
 
