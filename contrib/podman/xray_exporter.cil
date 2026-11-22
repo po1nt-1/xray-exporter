@@ -1,0 +1,7 @@
+(block xray_exporter
+	(blockinherit container)
+	(blockinherit net_container)
+	(allow process container_file_t (dir (getattr search open read)))
+	(allow process container_file_t (sock_file (getattr open read write)))
+	(allow process unconfined_t (unix_stream_socket (connectto)))
+)

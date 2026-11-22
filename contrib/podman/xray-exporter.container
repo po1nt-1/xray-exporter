@@ -1,0 +1,23 @@
+[Unit]
+Description=Xray exporter
+After=xray.service
+
+[Container]
+Image=ghcr.io/po1nt-1/xray-exporter:latest
+ContainerName=xray-exporter
+Exec=--listen :9550 --xray-endpoint 127.0.0.1:10085 --balancer pool --log-level warn
+Network=pasta:-T,10085
+PublishPort=127.0.0.1:9550:9550
+ReadOnly=true
+DropCapability=all
+NoNewPrivileges=true
+Environment=GOMEMLIMIT=32MiB
+PidsLimit=64
+PodmanArgs=--memory=96m
+
+[Service]
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

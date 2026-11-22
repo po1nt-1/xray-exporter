@@ -1,0 +1,13 @@
+#!/bin/sh
+
+ENABLED=yes
+PROCS=xray-exporter
+ARGS="--listen 127.0.0.1:9550 --xray-endpoint 127.0.0.1:10085 --balancer pool --log-level warn"
+PREARGS=""
+DESC=$PROCS
+PATH=/opt/sbin:/opt/bin:/opt/usr/sbin:/opt/usr/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+GOMEMLIMIT=32MiB
+export GOMEMLIMIT
+
+. /opt/etc/init.d/rc.func

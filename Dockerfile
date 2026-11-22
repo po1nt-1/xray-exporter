@@ -1,40 +1,31 @@
-FROM golang@sha256:91eda9776261207ea25fd06b5b7fed8d397dd2c0a283e77f2ab6e91bfa71079d AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS builder
 
-ARG SOURCE_DATE_EPOCH=0
-
-ENV CGO_ENABLED=0 \
-	GOCACHE=/root/.cache/go-build
-
-RUN rm -rf /root/.cache/go-build/*
+ARG TARGETOS
+ARG TARGETARCH
+ARG VERSION=dev
+ARG COMMIT=none
+ARG BUILD_DATE=unknown
 
 WORKDIR /src
-
 COPY go.mod go.sum ./
 RUN go mod download
-
-COPY . .
-
-RUN go build -trimpath -ldflags "-s -w" -o /xray-exporter .
-
-RUN sha256sum /xray-exporter
+COPY *.go ./
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
+	-ldflags "-s -w -X main.buildVersion=${VERSION} -X main.buildCommit=${COMMIT} -X main.buildDate=${BUILD_DATE}" \
+	-o /xray-exporter .
 
 FROM scratch
 
-ARG SOURCE_DATE_EPOCH=0
-
+ARG VERSION=dev
 LABEL org.opencontainers.image.title="xray-exporter" \
-	org.opencontainers.image.description="Prometheus exporter for Xray/V2Ray metrics" \
+	org.opencontainers.image.description="Prometheus exporter for Xray-core" \
 	org.opencontainers.image.source="https://github.com/po1nt-1/xray-exporter" \
-	org.opencontainers.image.version=${SOURCE_DATE_EPOCH} \
-	org.opencontainers.image.created=@${SOURCE_DATE_EPOCH} \
+	org.opencontainers.image.version="${VERSION}" \
 	org.opencontainers.image.licenses="MIT"
 
-COPY --from=builder /xray-exporter /xray-exporter
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /etc/nsswitch.conf /etc/nsswitch.conf
-
+COPY --from=builder /xray-exporter /xray-exporter
 EXPOSE 9550
-
 USER 65532:65532
-
 ENTRYPOINT ["/xray-exporter"]
+CMD ["--listen", ":9550"]

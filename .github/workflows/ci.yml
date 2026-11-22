@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+
+env:
+  GOLANGCI_LINT_VERSION: v2.14.0
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -13,43 +19,51 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
         with:
-          go-version: '1.26'
+          go-version-file: go.mod
           cache: true
-      - name: Lint
-        run: make lint
+      - name: Install golangci-lint
+        run: go install "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}"
       - name: Format
         run: make fmt
+      - name: Lint
+        run: make lint
       - name: Test
         run: make test
 
-  build:
+  integration:
     needs: check
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-          - goos: linux
-            goarch: arm64
+        xray:
+          - v1.260327.1-0.20260627131803-45cf2898ab12
+          - v1.260327.1-0.20261031132019-a4a3dff5b20c
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
         with:
-          go-version: '1.26'
+          go-version-file: go.mod
           cache: true
-      - name: Build binary
-        run: |
-          make build \
-            VERSION=${{ github.ref_name }} \
-            COMMIT=${{ github.sha }} \
-            GOOS=${{ matrix.goos }} \
-            GOARCH=${{ matrix.goarch }}
-      - name: Checksum
-        run: sha256sum dist/* > dist/checksum.txt
+      - name: Build xray
+        run: GOBIN="$RUNNER_TEMP/bin" go install github.com/xtls/xray-core/main@${{ matrix.xray }}
+      - name: Integration test
+        run: make integration XRAY_BIN="$RUNNER_TEMP/bin/main"
+
+  build:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build binaries
+        run: make dist VERSION=${{ github.sha }} COMMIT=${{ github.sha }}
       - name: Upload artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: xray-exporter-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: xray-exporter
           path: dist/
           retention-days: 7

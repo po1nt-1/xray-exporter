@@ -26,12 +26,14 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
           tags: |
             ghcr.io/${{ github.repository }}:${{ github.ref_name }}
             ghcr.io/${{ github.repository }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          target: attest
 
   push-dockerhub:
     runs-on: ubuntu-latest
@@ -51,12 +53,14 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
           tags: |
             docker.io/${{ secrets.DOCKER_USERNAME }}/xray-exporter:${{ github.ref_name }}
             docker.io/${{ secrets.DOCKER_USERNAME }}/xray-exporter:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          target: attest
 
   release:
     needs: [push-ghcr, push-dockerhub]
@@ -67,12 +71,10 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
         with:
-          go-version: '1.26'
+          go-version-file: go.mod
           cache: true
       - name: Build binaries
-        run: make
-      - name: Upload checksum
-        run: sha256sum dist/* > dist/checksum.txt
+        run: make dist VERSION=${{ github.ref_name }} COMMIT=${{ github.sha }}
       - name: Create Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda
         with:

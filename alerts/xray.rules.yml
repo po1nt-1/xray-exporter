@@ -1,0 +1,64 @@
+groups:
+  - name: xray
+    rules:
+      - alert: XrayApiDown
+        expr: xray_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.host }}: the exporter cannot reach the Xray API"
+
+      - alert: XrayMetricsStale
+        expr: time() - max by (host) (timestamp(xray_up)) > 600
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }}: no fresh samples for {{ $value | humanizeDuration }}"
+          description: The exporter, the scraper or the delivery path is down. Buffered samples arrive after it recovers.
+
+      - alert: XrayBalancerFallback
+        expr: xray_balancer_fallback == 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.host }}: balancer {{ $labels.balancer }} has no live outbound"
+
+      - alert: XrayOutboundDead
+        expr: xray_observatory_outbound_alive == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }}: probes through {{ $labels.outbound }} fail for 5 minutes"
+
+      - alert: XrayOutboundSlow
+        expr: xray_observatory_outbound_delay_seconds > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }}: probes through {{ $labels.outbound }} take {{ $value | humanizeDuration }}"
+
+      - alert: XrayBalancerFlapping
+        expr: increase(xray_balancer_switches_total[15m]) > 30
+        labels:
+          severity: info
+        annotations:
+          summary: "{{ $labels.host }}: balancer {{ $labels.balancer }} changed its pick {{ $value | humanize }} times in 15 minutes"
+
+      - alert: XrayMetricsBuffering
+        expr: vmagent_remotewrite_pending_data_bytes > 16 * 1024 * 1024
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }}: {{ $value | humanize1024 }}B of metrics wait for delivery"
+
+      - alert: XrayMetricsDropped
+        expr: increase(vmagent_remotewrite_packets_dropped_total[1h]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }}: the metrics buffer hit its size cap and dropped old data"
