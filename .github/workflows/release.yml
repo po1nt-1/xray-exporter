@@ -76,7 +76,7 @@ jobs:
       - name: Build binaries
         run: make dist VERSION=${{ github.ref_name }} COMMIT=${{ github.sha }}
       - name: Create Release
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3
         with:
           files: dist/*
           generate_release_notes: true
